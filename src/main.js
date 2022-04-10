@@ -1,9 +1,21 @@
-const TEXT_COLOR = 0xffffff;
+// Configuration
 const WINDOW_COLOR = 0xffffff;
 const RUNE_COLOR = 0x340d66;
 const RUNE_SCALE = 50;
 const BUTTON_WIDTH = 100;
 const BUTTON_HEIGHT = 24;
+
+
+// Enums
+const NORTH = 0
+const NORTH_EAST = 1
+const EAST = 2
+const SOUTH_EAST = 3
+const SOUTH = 4
+const SOUTH_WEST = 5
+const WEST = 6
+const NORTH_WEST = 7
+const NR_DIRECTIONS = 8
 
 
 async function Sprite(resource) {
@@ -109,17 +121,64 @@ class Rune {
         this.x = x;
         this.y = y;
         this.sprite = null;
+        this.mana = 0;
     }
 
-    onCast() {
-        console.log(this.type, this.x, this.y);
+    onCreate(board) {
+    }
+
+    onCast(board) {
+        console.log(`${this.type}:${this.constructor.name}`, this.x, this.y);
     }
 }
 
 
-class UnusedRune extends Rune {
-    get type() { return "UnusedRune"; }
+class VoidRune extends Rune {
     get resource() { return "fa/asterisk.svg"; }
+}
+
+
+class EmitterRune extends Rune {
+    get type() { return "Emitter"; }
+}
+
+
+class ManaEmitterRune extends EmitterRune {
+    get resource() { return "fa/circle-quarters.svg"; }
+    onCast(board) {
+        super.onCast(board);
+        this.mana += 1;
+    }
+}
+
+
+class DirectionalRune extends Rune {
+    constructor(x, y) {
+        super(x, y);
+        this._direction = NORTH;
+    }
+
+    onCreate(board) {
+        super.onCreate(board);
+        this.sprite.interactive = true;
+        this.sprite.on("click", () => {
+            this.direction = (this.direction + 1) % NR_DIRECTIONS;
+        });
+    }
+
+    get direction() {
+        return this._direction;
+    }
+
+    set direction(val) {
+        this._direction = val;
+        this.sprite.angle = (360 / 8) * this._direction;
+    }
+}
+
+
+class TransmitRune extends DirectionalRune {
+    get resource() { return "fa/arrow-up.svg"; }
 }
 
 
@@ -131,6 +190,7 @@ class Board {
         this.height = options.height;
         this.width = options.width;
         this.runes = {};
+        this.emitters = new Set();
         this.tile_min = { x: 0, y: 0 };
         this.tile_max = { x: 0, y: 0 };
         this.container = new PIXI.Container();
@@ -145,6 +205,9 @@ class Board {
         // Store rune
         const board_key = `${rune.x},${rune.y}`;
         this.runes[board_key] = rune;
+        if (rune.type === "Emitter") {
+            this.emitters.add(rune);
+        }
         // Update bounds
         if (rune.x < this.tile_min.x) {
             this.tile_min.x = rune.x;
@@ -160,17 +223,19 @@ class Board {
         }
         // Render rune sprite
         rune.sprite = await Sprite(rune.resource);
+        rune.sprite.pivot.set(rune.sprite.width / 2, rune.sprite.height / 2);
         rune.sprite.x = this.origin.x + (RUNE_SCALE * rune.x) - Math.round(RUNE_SCALE / 2);
         rune.sprite.y = this.origin.y + (RUNE_SCALE * rune.y) - Math.round(RUNE_SCALE / 2);
         rune.sprite.width = RUNE_SCALE;
         rune.sprite.height = RUNE_SCALE;
         rune.sprite.tint = RUNE_COLOR;
+        rune.onCreate(this);
         this.container.addChild(rune.sprite);
     }
 
     async cast() {
         for (let rune of Object.values(this.runes)) {
-            rune.onCast();
+            rune.onCast(this);
         }
     }
 }
@@ -211,11 +276,11 @@ $(async () => {
 
     // Add board and starting runes
     const board = new Board(app.stage, { x: board_x, y: board_y, width: board_width, height: board_height });
-    await board.addRune(new UnusedRune(0, 0));
-    await board.addRune(new UnusedRune(0, 1));
-    await board.addRune(new UnusedRune(0, -1));
-    await board.addRune(new UnusedRune(1, 0));
-    await board.addRune(new UnusedRune(-1, 0));
+    await board.addRune(new ManaEmitterRune(0, 0));
+    await board.addRune(new TransmitRune(0, 1));
+    await board.addRune(new VoidRune(0, -1));
+    await board.addRune(new VoidRune(1, 0));
+    await board.addRune(new VoidRune(-1, 0));
 
     // Add cast button
     const cast_button = Button(app.stage, {
